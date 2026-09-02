@@ -176,6 +176,40 @@ async function parseErrorBody(response: Response): Promise<{ message: string; ra
 export interface CallApiOptions {
   /** Skip errorbus dispatch for expected failures (e.g. optional-param 404s). */
   silent?: boolean;
+  /** Abort the request (a keystroke replacing the previous search). */
+  signal?: AbortSignal;
+}
+
+/** Query options of GET /apps/{id}/records — filter/orderby are vSQL (see the journey layer's
+ *  buildSearchFilter; never concatenate user input into them yourself). */
+export interface RecordQuery {
+  filter?: string;
+  orderby?: string[];
+  limit?: number;
+  offset?: number;
+  /** Field projection (`field=` repeated). The record's `fields` then holds ONLY these keys. */
+  fields?: string[];
+  signal?: AbortSignal;
+}
+// URLSearchParams encodes spaces as `+` — the API accepts it (verified live
+// 2026-09-02: orderby=r.v_nachname+asc → 200, sorted; filter with + → 200).
+export function recordQueryString(q: RecordQuery): string {
+  const p = new URLSearchParams();
+  if (q.filter) p.set('filter', q.filter);
+  for (const o of q.orderby ?? []) p.append('orderby', o);
+  for (const f of q.fields ?? []) p.append('field', f);
+  if (q.limit !== undefined) p.set('limit', String(Math.max(1, Math.floor(q.limit))));
+  if (q.offset !== undefined) p.set('offset', String(Math.max(0, Math.floor(q.offset))));
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
+/** `[[n]]` from aggregate_records?value=count() -> n; `[]` -> 0; anything else -> 0 (never NaN). */
+export function parseAggregateCount(data: unknown): number {
+  if (!Array.isArray(data)) return 0;
+  if (data.length === 0) return 0;
+  const first = data[0];
+  const n = Array.isArray(first) ? Number(first[0]) : Number(first);
+  return Number.isFinite(n) ? n : 0;
 }
 
 /** What the create and update helpers resolve to. Same `record_id`
@@ -198,9 +232,13 @@ async function callApi(method: string, endpoint: string, data?: any, options?: C
       method,
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',  // Nutze Session Cookies für Auth
+      signal: options?.signal,
       body: data ? JSON.stringify(data) : undefined
     });
   } catch (netErr) {
+    // A search the user typed past is cancelled, not broken — it must not
+    // raise an error toast on its way out.
+    if (netErr instanceof Error && netErr.name === 'AbortError') throw netErr;
     const message = netErr instanceof Error ? netErr.message : String(netErr);
     if (!silent) {
       window.dispatchEvent(new CustomEvent('errorbus:emit', { detail: {
@@ -502,6 +540,18 @@ export class LivingAppsService {
     })) as Testererfassung[];
     return hydrateRecords(records, 'testererfassung');
   }
+  static async queryTestererfassung(q: RecordQuery = {}): Promise<Testererfassung[]> {
+    const data = await callApi('GET', `/apps/${APP_IDS.TESTERERFASSUNG}/records${recordQueryString(q)}`, undefined, { signal: q.signal });
+    const records = Object.entries(data).map(([id, rec]: [string, any]) => ({
+      record_id: id, ...rec,
+      createdat: rec.created_at ?? '', updatedat: rec.updated_at ?? null,
+    })) as Testererfassung[];
+    return hydrateRecords(records, 'testererfassung');
+  }
+  static async countTestererfassung(filter?: string, signal?: AbortSignal): Promise<number> {
+    const data = await callApi('GET', `/apps/${APP_IDS.TESTERERFASSUNG}/aggregate_records${recordQueryString({ filter })}${filter ? '&' : '?'}value=count()`, undefined, { signal, silent: true });
+    return parseAggregateCount(data);
+  }
   static async getTestererfassungEntry(id: string): Promise<Testererfassung | undefined> {
     const data = await callApi('GET', `/apps/${APP_IDS.TESTERERFASSUNG}/records/${id}`);
     const record = { record_id: data.id, ...data, createdat: data.created_at ?? '', updatedat: data.updated_at ?? null } as Testererfassung;
@@ -528,21 +578,32 @@ import '@/lib/sentry';
 import '@/lib/stale-bundle';
 import { Fragment, lazy, Suspense, useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { locale, onLocaleChange, syncProfileLocale } from '@/i18n';
+import { locale, onLocaleChange, syncProfileLocale, t } from '@/i18n';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorBusProvider } from '@/components/ErrorBus';
 import { Layout } from '@/components/Layout';
 import DashboardReady from '@/pages/DashboardReady';
-import AdminPage from '@/pages/AdminPage';
 import PublicPagesAdmin from '@/pages/PublicPagesAdmin';
-import TestererfassungPage from '@/pages/TestererfassungPage';
-import TestererfassungDetailPage from '@/pages/TestererfassungDetailPage';
 // <custom:imports>
+
+
+
 // </custom:imports>
 
 // Lazy: public pages live outside <Layout> and only load on /#/public/:slug —
 // dashboard users never pay for them, anonymous visitors skip the dashboard.
 const PublicPage = lazy(() => import('@/pages/public/PublicPage'));
+
+function RouteNotFound() {
+  const { pathname } = useLocation();
+  return (
+    <div className="max-w-xl mx-auto mt-16 rounded-[27px] bg-card shadow-lg p-8 space-y-3" role="alert">
+      <h1 className="text-xl font-semibold tracking-tight">{t('nf_title')}</h1>
+      <p className="text-sm text-muted-foreground break-all">{t('nf_message', { path: pathname })}</p>
+      <a href="#/" className="inline-flex text-sm font-medium text-primary hover:underline">{t('nf_back')}</a>
+    </div>
+  );
+}
 
 // Language switch = full remount below the router: every t()/label lookup
 // re-evaluates, the la-* widgets re-read <html lang>. Sits inside HashRouter
@@ -591,12 +652,12 @@ export default function App() {
               <Route path="public/:slug" element={<Suspense fallback={null}><PublicPage /></Suspense>} />
               <Route element={<Layout />}>
                 <Route index element={<DashboardReady />} />
-                <Route path="testererfassung" element={<TestererfassungPage />} />
-                <Route path="testererfassung/:id" element={<TestererfassungDetailPage />} />
-                <Route path="admin" element={<AdminPage />} />
                 <Route path="verwaltung/oeffentliche-seiten" element={<PublicPagesAdmin />} />
                 {/* <custom:routes> */}
                 {/* </custom:routes> */}
+                {/* An unknown hash (a bookmark from before a rebuild renamed the
+                    flows, a mistyped link) must not be a blank page. */}
+                <Route path="*" element={<RouteNotFound />} />
               </Route>
             </Routes>
             </LocaleGate>
@@ -814,16 +875,31 @@ import { t } from '@/i18n';
  *  round-trip on every drag) and never refetch after a successful write.
  *  There is no other mechanism (no `__optimistic`, no `mutate`).
  */
-export function useDashboardData() {
+/** Entities this hook can load — the same keys the journey layer uses. */
+export type DashboardEntity = 'testererfassung';
+
+export interface DashboardDataOptions {
+  /** Entities this page does NOT need (picked through useRecordSearch instead).
+   *  Every flow page mounts this hook on its own route, so without `omit` a
+   *  page that searches 3.000 guests server-side would still pull all 3.000
+   *  through the side door. */
+  omit?: DashboardEntity[];
+}
+
+export function useDashboardData(options: DashboardDataOptions = {}) {
+  // A string key, not the array: an inline `omit={['gaeste']}` is a new array
+  // on every render and would restart the fetch forever.
+  const omitKey = (options.omit ?? []).slice().sort().join('|');
   const [testererfassung, setTestererfassung] = useState<Testererfassung[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchAll = useCallback(async () => {
     setError(null);
+    const omit = new Set(omitKey ? omitKey.split('|') : []);
     try {
       const [testererfassungData] = await Promise.all([
-        LivingAppsService.getTestererfassung(),
+        omit.has('testererfassung') ? Promise.resolve([] as Testererfassung[]) : LivingAppsService.getTestererfassung(),
       ]);
       setTestererfassung(testererfassungData);
     } catch (err) {
@@ -831,16 +907,17 @@ export function useDashboardData() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [omitKey]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   // Silent background refresh (no loading state change → no flicker)
   useEffect(() => {
+    const omit = new Set(omitKey ? omitKey.split('|') : []);
     async function silentRefresh() {
       try {
         const [testererfassungData] = await Promise.all([
-          LivingAppsService.getTestererfassung(),
+          omit.has('testererfassung') ? Promise.resolve([] as Testererfassung[]) : LivingAppsService.getTestererfassung(),
         ]);
         setTestererfassung(testererfassungData);
       } catch {
@@ -854,7 +931,7 @@ export function useDashboardData() {
     // both here, or every mutation fetches twice.
     window.addEventListener('assistant:data-changed', handleRefresh);
     return () => window.removeEventListener('assistant:data-changed', handleRefresh);
-  }, []);
+  }, [omitKey]);
 
   return { testererfassung, setTestererfassung, loading, error, fetchAll };
 }

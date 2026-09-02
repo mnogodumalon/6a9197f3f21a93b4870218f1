@@ -1,8 +1,23 @@
 Legend: `!` after a field name = required (from the app's base view) —
 a step form that writes such a field must not submit it empty.
+`^` after a field name = shown in the app's list view: the fields users
+recognize a record by — prefer them for select-card titles, stats and recall texts.
+A field's human label follows in quotes where it adds information (`kosten[number] "Kosten (EUR)"`) —
+use the label in every user-facing text, never the identifier.
 A lookup field lists its keys after the type (`[lookup/select: a|b|c]`);
-these are the ONLY valid write values — quote them into the brief verbatim,
-the matching labels come from LOOKUP_OPTIONS at runtime.
+these are the ONLY valid write values — quote them into the brief verbatim;
+`key=Label` shows the human label where it differs (write the key, show the label).
+`·` lines carry a field's description from the app model — real process
+knowledge: use it for step texts and "why we ask this" hints.
+`≡` = how many records the app held when this was built — CONTEXT only
+(spot empty entities, size the flow). It never chooses the data path: every
+pick-a-record step goes through useRecordSearch, which counts at RUNTIME and
+switches to server-side search when the entity has grown since the build
+(check-intents 3k rejects an EntitySelectStep fed from a useDashboardData array).
+`◈` names the input FORM each field shape wants — range → calendar
+(AvailabilityRangePicker via form.range), choice → pills (ChoiceGroup), record →
+select step (EntitySelectStep), stock → show the quantity, warn on overshoot.
+Pick the form that fits the data; a plain field only when nothing better exists.
 `⚙` lists the service methods for that entity, spelled exactly.
 `✚` lists the entity's Enriched* fields and its enrich() signature,
 spelled exactly — quote both verbatim; an invented enriched field or
@@ -13,15 +28,24 @@ Modules — copy these paths verbatim into a subagent brief:
   @/services/livingAppsService           LivingAppsService, createRecordUrl, extractRecordId
   @/hooks/useDashboardData               useDashboardData — the RAW arrays (one per entity, camelCase), their setters, loading, error, fetchAll
   @/lib/formatters                       lookupKey, formatDate
-  @/components/blocks/IntentWizardShell  IntentWizardShell
-  @/components/blocks/EntitySelectStep   EntitySelectStep
+  @/lib/journey                          useStepForm, useJourneySubmit, makeReference, SHAPES, type JourneyPort, useRecordSearch, resolveSelectMode — validation, plan runner, reference; door-agnostic
+  @/services/journeyPort                 servicePort — the INTERNAL door of the journey port (list · create · ref); hand it to useJourneySubmit and to blocks, never call LivingAppsService for a create the plan can do
+  @/lib/polish                           undoToast — success toast with an undo action (every delete in a flow)
+  @/components/blocks/IntentWizardShell  IntentWizardShell, useWizard — forms=, draftKey=, intro=, steps[i].enabledIf
+  @/components/blocks/StepNav            StepNav — Back / Continue with the next step's name; onNext returns form.validate(...)
+  @/components/blocks/SummaryStep        SummaryStep — check-answers step before EVERY write (forms=, submit=)
+  @/components/blocks/SuccessStep        SuccessStep — final step from submit.result: reference, facts, next actions
+  @/components/blocks/ChoiceGroup        ChoiceGroup — pill radiogroup for a lookup with few options ({...form.choice(key)})
+  @/components/blocks/EntitySelectStep   EntitySelectStep — onSelect, selectedId; adapts cards/search-first to the count; ALWAYS fed via {...x.select} from useRecordSearch
   @/components/blocks/StatusBadge        StatusBadge, getStatusColor
   @/components/blocks/BudgetTracker      BudgetTracker
-  @/components/blocks/AvailabilityRangePicker  AvailabilityRangePicker, rangeIsFree, isNightBlocked
+  @/components/blocks/AvailabilityRangePicker  AvailabilityRangePicker, rangeIsFree, isNightBlocked ({...form.range(from, to, { blocked })})
 There is NO `@/types/enriched` — no entity here has an applookup to a sibling app, so no Enriched* type is generated.
 There is NO `@/config/appIds`, no `@/config/lookupOptions` and no
 `@/lib/urlUtils` — APP_IDS and LOOKUP_OPTIONS come from `@/types/app`,
 createRecordUrl from the service. Note the lowercase `l` in the service path.
 
-- Testererfassung (testererfassung): titel![string/text], beschreibung[string/textarea], datum[date/date], status[lookup/select: offen|in_bearbeitung|abgeschlossen], ergebnis[string/textarea], bestanden[bool]
-  ⚙ getTestererfassung() · getTestererfassungEntry(id) · createTestererfassungEntry(fields) · updateTestererfassungEntry(id, fields) · deleteTestererfassungEntry(id)
+- Testererfassung (testererfassung): titel!^[string/text], beschreibung^[string/textarea], datum^[date/date], status^[lookup/select: offen|in_bearbeitung|abgeschlossen], ergebnis^[string/textarea], bestanden[bool] "Test bestanden"
+  ≡ 3 records at build time
+  ◈ status → choice (3 options, ChoiceGroup)
+  ⚙ getTestererfassung() · getTestererfassungEntry(id) · createTestererfassungEntry(fields) · updateTestererfassungEntry(id, fields) · deleteTestererfassungEntry(id) · queryTestererfassung({ filter, orderby, limit, offset, fields }) · countTestererfassung(filter?)

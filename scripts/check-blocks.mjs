@@ -21,6 +21,10 @@ const FORBIDDEN = [
   '@/lib/actions-agent',
   '@/hooks/useDashboardData',
   '@/lib/enrich',
+  // The two doors of the journey port. A block takes `port: JourneyPort` as a
+  // prop — the PAGE picks the door; a block that imports one is bound to it.
+  '@/services/journeyPort',
+  '@/lib/journey/publicPort',
 ];
 
 if (!existsSync(ROOT)) {

@@ -72,7 +72,10 @@ interface AvailabilityRangePickerProps {
   months?: number;
   /** Days before today are inert (default true). */
   disablePast?: boolean;
-  legend?: boolean;
+  /** Colour key under the grid (default true). A string keeps the key and
+   *  adds that sentence as a caption — `legend={tx('Belegte Nächte sind
+   *  ausgegraut.')}` is a valid call, not a type error. */
+  legend?: boolean | string;
 }
 
 export function AvailabilityRangePicker({
@@ -164,20 +167,23 @@ export function AvailabilityRangePicker({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      {/* Each month is an intrinsically sized 7×40px grid — so the space
+          BETWEEN months stays visibly larger than the space between day
+          columns, and a divider separates them on wide screens. */}
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-0 sm:divide-x sm:divide-border">
         {monthStarts.slice(0, 2).map(monthStart => {
           const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
           const gridEnd = endOfWeek(endOfMonth(monthStart), { weekStartsOn: 1 });
           const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
           const monthIso = format(monthStart, 'yyyy-MM');
           return (
-            <div key={monthIso}>
-              <p className="text-sm font-medium text-center mb-2 capitalize">
+            <div key={monthIso} className="flex flex-col items-center sm:first:pr-6 sm:last:pl-6">
+              <p className="text-sm font-semibold text-center mb-3 capitalize">
                 {format(monthStart, 'LLLL yyyy', { locale })}
               </p>
               <div className="grid grid-cols-7 gap-y-1 text-center">
                 {days.slice(0, 7).map(d => (
-                  <span key={`h-${format(d, 'i')}`} className="text-xs text-muted-foreground py-1">
+                  <span key={`h-${format(d, 'i')}`} className="w-10 text-xs font-medium text-muted-foreground pb-2 mb-1 border-b border-border">
                     {format(d, 'EEEEEE', { locale })}
                   </span>
                 ))}
@@ -205,6 +211,14 @@ export function AvailabilityRangePicker({
                         : nightBlocked
                           ? 'text-muted-foreground/60 line-through bg-muted/60'
                           : 'hover:bg-accent';
+                  // A completed range reads as one band: only its ends are rounded.
+                  const shape = isFrom && value.to
+                    ? 'rounded-l-md'
+                    : isTo
+                      ? 'rounded-r-md'
+                      : inRange
+                        ? 'rounded-none'
+                        : 'rounded-md';
                   return (
                     <button
                       key={iso}
@@ -212,7 +226,7 @@ export function AvailabilityRangePicker({
                       disabled={past}
                       aria-label={format(d, 'PPP', { locale })}
                       aria-pressed={isFrom || isTo}
-                      className={`h-9 sm:h-10 w-full max-w-10 mx-auto text-sm rounded-md flex items-center justify-center transition-colors ${cls}`}
+                      className={`h-10 w-10 text-sm flex items-center justify-center transition-colors ${shape} ${cls}`}
                       onClick={() => clickDay(iso)}
                     >
                       {format(d, 'd')}
@@ -243,6 +257,9 @@ export function AvailabilityRangePicker({
             <span className="h-3 w-3 rounded-sm bg-primary" aria-hidden="true" />
             {t('arp_legend_selected')}
           </span>
+          {typeof legend === 'string' && legend.trim() !== '' ? (
+            <span className="basis-full sm:basis-auto sm:ml-auto">{legend}</span>
+          ) : null}
         </div>
       ) : null}
     </div>

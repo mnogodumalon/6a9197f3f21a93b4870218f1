@@ -101,12 +101,22 @@ if (app.includes(`@/pages/intents/${page}`)) {
   done.push(`${APP}: lazy import for ${page} (as ${ident})`);
 }
 
+// The lazy chunk of a flow used to load behind `fallback={null}` — a white
+// page for the whole download. The scaffold's DashboardSkeleton is the
+// fallback now; its import lives inside <custom:imports> so a dashboard
+// without flows never carries an unused import (tsc noUnusedLocals).
+const SKELETON_IMPORT = "import { DashboardSkeleton } from '@/components/DashboardStates';";
+if (!app.includes("from '@/components/DashboardStates'")) {
+  app = insertBeforeMarker(app, '// </custom:imports>', SKELETON_IMPORT, APP);
+  done.push(`${APP}: DashboardSkeleton import (route fallback)`);
+}
+
 if (new RegExp(`<Route\\s+path=["']intents/${slug}["']`).test(app)) {
   same.push(`${APP}: route intents/${slug} already present`);
 } else {
   app = insertBeforeMarker(
     app, '{/* </custom:routes> */}',
-    `<Route path="intents/${slug}" element={<Suspense fallback={null}><${ident} /></Suspense>} />`, APP,
+    `<Route path="intents/${slug}" element={<Suspense fallback={<DashboardSkeleton />}><${ident} /></Suspense>} />`, APP,
   );
   done.push(`${APP}: route intents/${slug}`);
 }

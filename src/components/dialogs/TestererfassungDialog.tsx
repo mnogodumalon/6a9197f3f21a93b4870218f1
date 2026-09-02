@@ -309,7 +309,7 @@ export function TestererfassungDialog({ open, onClose, onSubmit, defaultValues, 
         <Label htmlFor="titel">{fieldLabel('testererfassung', 'titel')} <span className="text-destructive" aria-hidden="true">*</span></Label>
         <Input
           id="titel"
-          placeholder="z. B. Login-Test A"
+          placeholder=""
           value={fields.titel ?? ''}
           onChange={e => setFields(f => ({ ...f, titel: e.target.value }))}
           required
@@ -324,7 +324,7 @@ export function TestererfassungDialog({ open, onClose, onSubmit, defaultValues, 
         <Label htmlFor="beschreibung">{fieldLabel('testererfassung', 'beschreibung')}</Label>
         <Textarea
           id="beschreibung"
-          placeholder="Was wurde getestet, Hinweise zur Durchführung..."
+          placeholder=""
           value={fields.beschreibung ?? ''}
           onChange={e => setFields(f => ({ ...f, beschreibung: e.target.value }))}
           rows={3}
@@ -336,7 +336,7 @@ export function TestererfassungDialog({ open, onClose, onSubmit, defaultValues, 
         <Label htmlFor="datum">{fieldLabel('testererfassung', 'datum')}</Label>
         <DatePicker
           id="datum"
-          placeholder="Wann wurde getestet?"
+          placeholder=""
           mode="date"
           value={fields.datum ?? null}
           onChange={v => setFields(f => ({ ...f, datum: v ?? undefined }))}
@@ -394,7 +394,7 @@ export function TestererfassungDialog({ open, onClose, onSubmit, defaultValues, 
         <Label htmlFor="ergebnis">{fieldLabel('testererfassung', 'ergebnis')}</Label>
         <Textarea
           id="ergebnis"
-          placeholder="Testergebnisse, Fehler, Beobachtungen..."
+          placeholder=""
           value={fields.ergebnis ?? ''}
           onChange={e => setFields(f => ({ ...f, ergebnis: e.target.value }))}
           rows={3}

@@ -3,7 +3,6 @@
 These files are pre-generated. Do NOT Read the pre-generated source files — their contracts and contents are in THIS file and in the key-file parts listed below.
 Key file contents (types/app.ts, livingAppsService.ts, App.tsx, Layout.tsx, hooks/libs) are in .scaffold_files_p1, .scaffold_files_p2 — Read each of them with ONE Read right after this file.
 EXCEPTION: DashboardOverview.tsx is NOT included here. You MUST Read it with the Read tool before Write.
-AdminPage.tsx is pre-generated but NOT inlined — Read it only if you need to reference its structure.
 Your job: Analyze data (1-2 sentences), Read then Write DashboardOverview.tsx (once), build.
 Large custom UI blocks (a self-contained concept of ~60+ lines no widget covers) are NOT written inline: dictate the props interface in a brief, dispatch build_components (ONE call, all components), write the Overview against your own interface, and call await_components before any gate or build — see CLAUDE.md Step 1b.
 DashboardOverview receives LOADED data as a prop (`{ data }: { data: DashboardData }`) — src/pages/DashboardReady.tsx (generator-owned) runs useDashboardData() and the loading/error surfaces before the page mounts. Do NOT call useDashboardData() in the page and write NO loading/error early-return; hooks may sit anywhere in the component body.
@@ -14,7 +13,7 @@ index.css is pre-generated with the shared design system. Do NOT edit it.
 src/config/ai-features.ts is editable — set AI_PHOTO_SCAN['Entity'] = true to enable photo scan in dialogs.
 NEVER use Bash cat/echo/heredoc for file operations — always use Read/Write/Edit tools.
 
-Generated 93 scaffold files:
+Generated 108 scaffold files:
   - src/App.tsx
   - src/i18n/index.ts
   - src/i18n/common.ts
@@ -24,7 +23,6 @@ Generated 93 scaffold files:
   - src/types/la-widgets.d.ts
   - src/components/PageShell.tsx
   - src/components/ActionsSidebar.tsx
-  - src/pages/DashboardOverview.tsx
   - src/pages/DashboardReady.tsx
   - src/components/DashboardStates.tsx
   - src/components/ConfirmDialog.tsx
@@ -49,7 +47,6 @@ Generated 93 scaffold files:
   - src/components/DatePicker.tsx
   - .placeholder-tasks.json
   - src/config/form-enhancements/types.ts
-  - src/config/form-enhancements/Testererfassung.ts
   - scripts/parse-formulas.mjs
   - scripts/apply-placeholders.mjs
   - src/config/intents.ts
@@ -63,6 +60,29 @@ Generated 93 scaffold files:
   - src/components/blocks/StatusBadge.tsx
   - src/components/StatusBadge.tsx
   - src/components/blocks/AvailabilityRangePicker.tsx
+  - src/components/blocks/SummaryStep.tsx
+  - src/components/blocks/SuccessStep.tsx
+  - src/components/blocks/StepNav.tsx
+  - src/components/blocks/ChoiceGroup.tsx
+  - src/components/blocks/FieldErrorSummary.tsx
+  - src/components/blocks/Field.tsx
+  - src/lib/journey/port.ts
+  - src/lib/journey/format.ts
+  - src/lib/journey/reference.ts
+  - src/lib/journey/draft.ts
+  - src/lib/journey/occupancy.ts
+  - src/lib/journey/selectMode.ts
+  - src/lib/journey/search.ts
+  - src/lib/journey/useRecordSearch.ts
+  - src/lib/journey/useStepForm.ts
+  - src/lib/journey/useJourneySubmit.ts
+  - src/lib/journey/summary.ts
+  - src/lib/journey/index.ts
+  - src/lib/journey/publicPort.ts
+  - src/lib/journey/rules.ts
+  - src/services/journeyPort.ts
+  - src/config/journey.ts
+  - scripts/check-journey.mjs
   - src/index.css
   - src/lib/origin.ts
   - src/lib/sentry.ts
@@ -70,7 +90,6 @@ Generated 93 scaffold files:
   - src/lib/ai.ts
   - src/components/VersionCheck.tsx
   - src/components/AttachmentsSection.tsx
-  - src/config/ai-features.ts
   - src/lib/formatters.ts
   - src/lib/polish.ts
   - src/hooks/useDashboardData.ts
@@ -99,15 +118,10 @@ Generated 93 scaffold files:
   - src/components/widgets/ChartWidget.tsx
   - src/components/widgets/ChartWidget.example.tsx
   - tsconfig.app.json
-  - src/pages/TestererfassungPage.tsx
   - src/components/dialogs/TestererfassungDialog.tsx
-  - src/components/dialogs/TestererfassungViewDialog.tsx
-  - src/pages/TestererfassungDetailPage.tsx
   - src/components/details/TestererfassungDetails.tsx
   - src/components/EntityCrud.tsx
   - src/types/leaflet-plugins.d.ts
-  - src/pages/AdminPage.tsx
-  - src/components/dialogs/BulkEditDialog.tsx
 
 ## Localized entity names — appLabel(), never a literal
 

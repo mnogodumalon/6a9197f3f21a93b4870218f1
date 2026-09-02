@@ -23,27 +23,11 @@ export function IntentsNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const navRef = useRef<HTMLElement>(null);
-  const sectionRef = useRef<HTMLElement>(null);
 
-  // Die Gruppe startet ZUgeklappt (Figma-Muster). Das Widget kennt kein
-  // steuerbares collapsed-Attribut (foldable/collapsed sind in der aktuellen
-  // Release wirkungslos) — deshalb einmalig beim Mount den aria-Toggle im
-  // Shadow klicken; der [aria-expanded="true"]-Guard trifft nur eine offene
-  // Sektion. Interval-Fallback, weil der Loader asynchron lädt. Während
-  // INTENTS_PENDING bleibt die Gruppe offen (Ghost-Zeile sichtbar).
-  useEffect(() => {
-    if (INTENTS.length === 0 || INTENTS_PENDING) return;
-    const collapse = () => {
-      const btn = sectionRef.current?.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-expanded="true"]');
-      if (!btn) return false;
-      btn.click();
-      return true;
-    };
-    if (collapse()) return;
-    const timer = window.setInterval(() => { if (collapse()) window.clearInterval(timer); }, 250);
-    const stop = window.setTimeout(() => window.clearInterval(timer), 5000);
-    return () => { window.clearInterval(timer); window.clearTimeout(stop); };
-  }, []);
+  // The group starts OPEN. It used to click its own aria-toggle closed on
+  // mount (a Figma pattern) — which hid the only entry point to every flow
+  // behind a collapsed menu item; the launch review counted it as a top-3
+  // finding. The widget's default (expanded) is the wanted state.
 
   const itemsJson = useMemo(() => {
     let items: LaNavItem[];
@@ -87,7 +71,7 @@ export function IntentsNav() {
     // primary = aufklappbare Gruppe INNERHALB der Aktionen-Sektion (Layout),
     // gleiches Muster wie „Datenverwaltung" unter Darstellung. dense = die
     // kleinere Unterpunkt-Schrift (--la-nav-text-size), wie im Gateway.
-    <la-nav-section ref={sectionRef} type="primary" label={t('intents_heading')} dense="">
+    <la-nav-section type="primary" label={t('intents_heading')} dense="">
       <la-nav ref={navRef} mode="select" data-nav={itemsJson} />
     </la-nav-section>
   );

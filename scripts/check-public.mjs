@@ -28,6 +28,11 @@ const ALLOWED_AT = [
   '@/components/widgets/',
   '@/lib/utils',
   '@/lib/formatters',
+  // The journey layer (port, rules, useStepForm, plan runner, public adapter)
+  // is door-agnostic by design — the internal adapter lives under
+  // '@/services/', which stays forbidden here.
+  '@/lib/journey',
+  '@/lib/journey/',
   '@/i18n',
   '@/types/',
 ];
@@ -42,6 +47,14 @@ function walk(dir) {
     else if (/\.(tsx?|jsx?)$/.test(entry)) files.push(full);
   }
   return files;
+}
+
+// App metadata for type-aware field checks (present in every sandbox).
+let appMeta = null;
+try {
+  appMeta = JSON.parse(readFileSync('app_metadata.json', 'utf8'));
+} catch {
+  // metadata missing (e.g. local runs) — type checks are skipped
 }
 
 // ── 1. Import allowlist over agent-written pages ─────────────────────────
@@ -61,6 +74,91 @@ for (const file of pageFiles) {
   // flag `/rest` wherever a delimiter follows (`/rest'`, `/rest"`,
   // backtick, `/rest/`) — that catches glued forms without tripping on
   // words like "/restaurants".
+  // 3g. A date is a form value, not a pixel. A native <input type="date"
+  //     defaultValue={today}> LOOKS filled while useStepForm holds nothing —
+  //     validation said "Ausgabedatum fehlt" over a visibly filled field, and
+  //     re-picking the shown day fires no change event (live). Dates render
+  //     through <DatePicker {...f.date('key')} />; initial values belong in
+  //     useStepForm(entity, { initial: { key: todayIso() } }).
+  for (const m of src.matchAll(/type\s*=\s*["'](date|datetime-local|time)["']/g)) {
+    const line = src.slice(0, m.index).split('\n').length;
+    errors.push(`${file}:${line}: native <input type="${m[1]}"> — use <DatePicker {...f.date('key')} /> from '@/components/DatePicker' (the form owns the value); a native date input with a default shows a day the form never has`);
+  }
+  for (const m of src.matchAll(/\bdefaultValue\s*=/g)) {
+    const line = src.slice(0, m.index).split('\n').length;
+    errors.push(`${file}:${line}: defaultValue on an input — initial values belong to the form: useStepForm(entity, { initial: { key: value } }) (dates: todayIso() from '@/lib/journey'); an uncontrolled default is never submitted and fails validation`);
+  }
+
+  // 3h. Every bound control sits under a label. The bindings carry id, value,
+  //     aria-* — not the label; a step with five bare inputs shipped (live).
+  //     <Field form={f} name="key"> renders label, hint and error from the
+  //     entity's rules; a hand-written <Label htmlFor={f.fieldId('key')}> also counts.
+  {
+    const bound = new Set();
+    for (const m of src.matchAll(/\.(?:field|number|date|choice|checkbox|record)\(\s*['"]([\w]+)['"]/g)) bound.add(m[1]);
+    for (const key of bound) {
+      const wrapped = new RegExp(`<Field\\b[^>]*\\bname=["']${key}["']`).test(src);
+      const labelled = new RegExp(`htmlFor=\\{[^}]*fieldId\\(\\s*['"]${key}['"]`).test(src);
+      if (!wrapped && !labelled) {
+        errors.push(`${file}: the control bound with f.…('${key}') has no label — wrap it: <Field form={f} name="${key}">…</Field> (label from the entity's rules, error and hint included; from '@/components/blocks/Field')`);
+      }
+    }
+  }
+
+  // 3i. The page may only render steps it declares. A live flow declared
+  //     three steps and rendered its review as step 4: the indicator said
+  //     "3 von 3", wizard.next() had nowhere to go, the last "Weiter" was dead.
+  {
+    const stepsLiteral = /steps=\{\s*\[([\s\S]*?)\]\s*\}/.exec(src) || /const\s+\w+(?:\s*:\s*WizardStep\[\])?\s*=\s*\[([\s\S]*?\blabel\b[\s\S]*?)\];/.exec(src);
+    if (stepsLiteral) {
+      const declared = (stepsLiteral[1].match(/\blabel\s*:/g) || []).length;
+      let rendered = 0;
+      for (const m of src.matchAll(/\b(?:step|currentStep|activeStep)\s*===\s*(\d+)/g)) rendered = Math.max(rendered, Number(m[1]));
+      if (declared > 0 && rendered > declared) {
+        errors.push(`${file}: renders step ${rendered} but declares only ${declared} step(s) in \`steps\` — add the missing step(s) (e.g. { label: 'Prüfen' }); the indicator, "Schritt n von m" and wizard.next() follow the array, so an undeclared step is unreachable`);
+      }
+    }
+  }
+
+
+  // 3j. useRecordSearch searches STRING fields only — the vSQL filter wraps
+  //     each field in `str(...).lower()`, so a lookup, date or number field
+  //     matches its raw storage form and effectively never hits. A typo names
+  //     a field the entity does not have, which silently searches nothing.
+  {
+    const RS_RE = /useRecordSearch\(\s*\w+\s*,\s*['"]([\w]+)['"]\s*,\s*\{[\s\S]*?searchFields\s*:\s*\[([^\]]*)\]/g;
+    for (const m of src.matchAll(RS_RE)) {
+      const entity = m[1];
+      const fields = [...m[2].matchAll(/['"]([\w]+)['"]/g)].map(x => x[1]);
+      const controls = appMeta?.apps?.[entity]?.controls;
+      if (appMeta && !controls) {
+        errors.push(`${file}: useRecordSearch names unknown entity '${entity}' — use the identifier from app_metadata.json`);
+        continue;
+      }
+      if (fields.length === 0) {
+        errors.push(`${file}: useRecordSearch('${entity}') has an empty searchFields — name 1–4 string fields users recognise a record by`);
+      }
+      for (const f of fields) {
+        const ft = controls?.[f]?.fulltype;
+        if (controls && !ft) {
+          errors.push(`${file}: useRecordSearch('${entity}') searchFields names '${f}', which '${entity}' does not have`);
+        } else if (ft && !ft.startsWith('string')) {
+          errors.push(`${file}: useRecordSearch('${entity}') searchFields '${f}' is ${ft} — only string fields are searchable (text, email, tel, textarea)`);
+        }
+      }
+    }
+  }
+
+  // `cond ? listPublicRecords(…) : Promise.resolve({})` — the untyped {}
+  // widens the Promise.all tuple, Object.values() then yields unknown[] and
+  // every `r.fields` access is TS18046 (11 errors in one live page, first
+  // seen by the integration build, one repair round).
+  const emptyFallback = /Promise\.resolve\(\s*\{\s*\}\s*\)/.exec(src);
+  if (emptyFallback) {
+    const line = src.slice(0, emptyFallback.index).split('\n').length;
+    errors.push(`${file}:${line}: Promise.resolve({}) — the untyped {} widens the result to unknown (TS18046 on every r.fields); write Promise.resolve<Record<string, PublicRecordResult>>({}) with \`import type { PublicRecordResult } from '@/lib/publicClient'\`, or drop the guard and call listPublicRecords unconditionally`);
+  }
+
   const restUrl = /\/rest['"`\/]/.exec(src);
   if (restUrl) {
     const line = src.slice(0, restUrl.index).split('\n').length;
@@ -142,12 +240,19 @@ if (existsSync(REGISTRY)) {
   }
 }
 
-// App metadata for type-aware field checks (present in every sandbox).
-let appMeta = null;
-try {
-  appMeta = JSON.parse(readFileSync('app_metadata.json', 'utf8'));
-} catch {
-  // metadata missing (e.g. local runs) — type checks are skipped
+// The agent's occupancy decision (src/config/journey.ts): which applookup is
+// the booked resource of a stay. Missing file or block → no rules.
+const JOURNEY_CONFIG = 'src/config/journey.ts';
+const occupancyRules = {};
+if (existsSync(JOURNEY_CONFIG)) {
+  const block = /\/\/ <custom:occupancy>([\s\S]*?)\/\/ <\/custom:occupancy>/.exec(readFileSync(JOURNEY_CONFIG, 'utf8'));
+  if (block) {
+    for (const m of block[1].matchAll(/^\s*['"]?([a-z0-9_]+)['"]?\s*:\s*\{([^}]*)\}\s*,?\s*$/gm)) {
+      const body = m[2];
+      const str = key => { const s = new RegExp(`\\b${key}\\s*:\\s*['"]([^'"]+)['"]`).exec(body); return s ? s[1] : undefined; };
+      occupancyRules[m[1]] = { from: str('from'), to: str('to'), resource: str('resource') };
+    }
+  }
 }
 
 let surface = null;
@@ -310,6 +415,25 @@ for (const [slug, page] of surfacePages) {
           const referenced = new RegExp(`(['"\`]${key}['"\`])|(\\b${key}\\s*:)`).test(pageSrc);
           if (!referenced) {
             errors.push(`${pageFile}: required field '${key}' of '${ep.entity}' is declared in ${SURFACE} but the page never submits it — either add an input for it (createPublicRecord must include '${key}') or drop '${key}' out of the endpoint's field projection so the team fills it internally`);
+          }
+        }
+      }
+      // The stay's resource is a FORM FIELD. The agent's occupancy rule names
+      // it; a page that kept the picked room in page state and handed it over
+      // through the plan's `values` lost it on reload (not in the draft), hid
+      // it from the summary and never validated it — a booking without its
+      // room was created live. useStepForm makes the resource required by
+      // itself, but only for a field it carries.
+      const stay = occupancyRules[ep.entity];
+      if (stay?.resource) {
+        if (!epFields.includes(stay.resource) && !(stay.resource in preset)) {
+          errors.push(`${SURFACE}: page '${slug}' creates '${ep.entity}', whose stay resource is '${stay.resource}' (src/config/journey.ts), but the create endpoint does not declare it — a record without its ${stay.resource} cannot be checked against occupancy; add '${stay.resource}' to fields`);
+        }
+        if (pageSrc !== null) {
+          const formRe = new RegExp(`useStepForm\\(\\s*['"\`]${ep.entity}['"\`]\\s*,\\s*\\{[\\s\\S]*?fields\\s*:\\s*\\[([^\\]]*)\\]`);
+          const form = formRe.exec(pageSrc);
+          if (form && !new RegExp(`['"\`]${stay.resource}['"\`]`).test(form[1])) {
+            errors.push(`${pageFile}: useStepForm('${ep.entity}', { fields: [...] }) omits the stay resource '${stay.resource}' — make it a form field (f.record('${stay.resource}'), or f.set('${stay.resource}', id, label) from the picker) instead of page state passed through the plan's values; only a form field survives a reload, appears in the summary and is validated`);
           }
         }
       }

@@ -5,7 +5,7 @@
  * the contract tsc-gate against the frozen hotel fixture (entity `Buchung`,
  * applookup `zimmer` -> entity `Zimmer`). It shows the two real surfaces the
  * agent wires: an in-dashboard OVERLAY STACK (relations drill without
- * navigating) and a full-page ROUTE detail. Copy a block, swap the field
+ * navigating) and a full-page detail surface. Copy a block, swap the field
  * names, ship. Every import resolves; every enum value is a real one; the
  * `getZimmerDisplayName` helper is an inline literal (no phantom import).
  *
@@ -160,13 +160,21 @@ export function HotelOverlayExample() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// SURFACE 2 — Full-page route detail (/buchung/:id). Click a list row ->
-// navigate here. Wrap the composition in <RecordView>; use the state-trias
-// (Skeleton / Empty / Error) for the load lifecycle. `aside` opts into the
-// 2-column layout.
+// SURFACE 2 — Full-page detail on a page you compose yourself (e.g. an intent
+// step that owns a record id). Wrap the composition in <RecordView>; use the
+// state-trias (Skeleton / Empty / Error) for the load lifecycle. `aside` opts
+// into the 2-column layout. Editing and drilling arrive as PROPS — exactly
+// like the generated <{Entity}Details> block: wire them to
+// `crud.buchung.openEdit(record)` / `crud.zimmer.openDetail(record)`.
 // ─────────────────────────────────────────────────────────────────────────
 
-export function BuchungDetailPageExample() {
+export function BuchungDetailPageExample({
+  onEdit,
+  onOpenZimmer,
+}: {
+  onEdit: (record: Buchung) => void;
+  onOpenZimmer: (record: Zimmer) => void;
+}) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [record, setRecord] = useState<Buchung | null>(null);
@@ -200,7 +208,7 @@ export function BuchungDetailPageExample() {
   async function handleDelete() {
     if (!record) return;
     await LivingAppsService.deleteBuchungEntry(record.record_id);
-    navigate('/buchung');
+    navigate('/');
   }
 
   if (loading) return <RecordViewSkeleton />;
@@ -210,7 +218,7 @@ export function BuchungDetailPageExample() {
       <RecordViewEmpty
         title="Buchung nicht gefunden"
         action={
-          <Button variant="ghost" onClick={() => navigate('/buchung')}>
+          <Button variant="ghost" onClick={() => navigate('/')}>
             <IconArrowLeft className="h-4 w-4 mr-1.5" />
             Zurück
           </Button>
@@ -221,8 +229,8 @@ export function BuchungDetailPageExample() {
 
   return (
     <RecordView
-      onBack={() => navigate('/buchung')}
-      onEdit={() => navigate(`/buchung/${record.record_id}?edit=1`)}
+      onBack={() => navigate('/')}
+      onEdit={() => onEdit(record)}
       aside={
         <>
           <RecordSection title="Verknüpfungen" cols={1}>
@@ -232,7 +240,8 @@ export function BuchungDetailPageExample() {
               icon={IconBed}
               onClick={() => {
                 const zid = extractRecordId(record.fields.zimmer);
-                if (zid) navigate(`/zimmer/${zid}`);
+                const target = zimmerList.find(z => z.record_id === zid);
+                if (target) onOpenZimmer(target);
               }}
             />
           </RecordSection>

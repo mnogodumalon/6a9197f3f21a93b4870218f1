@@ -75,6 +75,40 @@ async function parseErrorBody(response: Response): Promise<{ message: string; ra
 export interface CallApiOptions {
   /** Skip errorbus dispatch for expected failures (e.g. optional-param 404s). */
   silent?: boolean;
+  /** Abort the request (a keystroke replacing the previous search). */
+  signal?: AbortSignal;
+}
+
+/** Query options of GET /apps/{id}/records — filter/orderby are vSQL (see the journey layer's
+ *  buildSearchFilter; never concatenate user input into them yourself). */
+export interface RecordQuery {
+  filter?: string;
+  orderby?: string[];
+  limit?: number;
+  offset?: number;
+  /** Field projection (`field=` repeated). The record's `fields` then holds ONLY these keys. */
+  fields?: string[];
+  signal?: AbortSignal;
+}
+// URLSearchParams encodes spaces as `+` — the API accepts it (verified live
+// 2026-09-02: orderby=r.v_nachname+asc → 200, sorted; filter with + → 200).
+export function recordQueryString(q: RecordQuery): string {
+  const p = new URLSearchParams();
+  if (q.filter) p.set('filter', q.filter);
+  for (const o of q.orderby ?? []) p.append('orderby', o);
+  for (const f of q.fields ?? []) p.append('field', f);
+  if (q.limit !== undefined) p.set('limit', String(Math.max(1, Math.floor(q.limit))));
+  if (q.offset !== undefined) p.set('offset', String(Math.max(0, Math.floor(q.offset))));
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
+/** `[[n]]` from aggregate_records?value=count() -> n; `[]` -> 0; anything else -> 0 (never NaN). */
+export function parseAggregateCount(data: unknown): number {
+  if (!Array.isArray(data)) return 0;
+  if (data.length === 0) return 0;
+  const first = data[0];
+  const n = Array.isArray(first) ? Number(first[0]) : Number(first);
+  return Number.isFinite(n) ? n : 0;
 }
 
 /** What the create and update helpers resolve to. Same `record_id`
@@ -97,9 +131,13 @@ async function callApi(method: string, endpoint: string, data?: any, options?: C
       method,
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',  // Nutze Session Cookies für Auth
+      signal: options?.signal,
       body: data ? JSON.stringify(data) : undefined
     });
   } catch (netErr) {
+    // A search the user typed past is cancelled, not broken — it must not
+    // raise an error toast on its way out.
+    if (netErr instanceof Error && netErr.name === 'AbortError') throw netErr;
     const message = netErr instanceof Error ? netErr.message : String(netErr);
     if (!silent) {
       window.dispatchEvent(new CustomEvent('errorbus:emit', { detail: {
@@ -400,6 +438,18 @@ export class LivingAppsService {
       createdat: rec.created_at ?? '', updatedat: rec.updated_at ?? null,
     })) as Testererfassung[];
     return hydrateRecords(records, 'testererfassung');
+  }
+  static async queryTestererfassung(q: RecordQuery = {}): Promise<Testererfassung[]> {
+    const data = await callApi('GET', `/apps/${APP_IDS.TESTERERFASSUNG}/records${recordQueryString(q)}`, undefined, { signal: q.signal });
+    const records = Object.entries(data).map(([id, rec]: [string, any]) => ({
+      record_id: id, ...rec,
+      createdat: rec.created_at ?? '', updatedat: rec.updated_at ?? null,
+    })) as Testererfassung[];
+    return hydrateRecords(records, 'testererfassung');
+  }
+  static async countTestererfassung(filter?: string, signal?: AbortSignal): Promise<number> {
+    const data = await callApi('GET', `/apps/${APP_IDS.TESTERERFASSUNG}/aggregate_records${recordQueryString({ filter })}${filter ? '&' : '?'}value=count()`, undefined, { signal, silent: true });
+    return parseAggregateCount(data);
   }
   static async getTestererfassungEntry(id: string): Promise<Testererfassung | undefined> {
     const data = await callApi('GET', `/apps/${APP_IDS.TESTERERFASSUNG}/records/${id}`);

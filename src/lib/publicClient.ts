@@ -563,6 +563,22 @@ function normalizeApplookupRefs(
 }
 
 
+/**
+ * Preset fields are server-owned: the grant writes them onto every record and
+ * rejects a request that carries them (`unallowed_fields` + `preset_fields`
+ * in the 400 — live-seen when a page sent `status: 'anfrage'` next to its own
+ * `preset_fields: { status: 'anfrage' }`). Whatever a page puts there is
+ * dropped here, so the declaration alone decides.
+ */
+function dropPresetFields(page: PublicPageConfig, fields: Record<string, unknown>): Record<string, unknown> {
+  const ep = page.endpoints?.find(e => e.op === 'create' && e.app_id === page.app_id);
+  const preset = ep?.preset_fields;
+  if (!preset) return fields;
+  const out = { ...fields };
+  for (const key of Object.keys(preset)) delete out[key];
+  return out;
+}
+
 async function throwSubmitError(res: Response): Promise<never> {
   if (res.status === 404 || res.status === 405) throw new PageUnavailableError();
   if (res.status === 429) throw new RateLimitedError();
@@ -617,7 +633,7 @@ export async function createPublicRecord(
   page: PublicPageConfig,
   fields: Record<string, unknown>,
 ): Promise<PublicRecordResult> {
-  fields = normalizeApplookupRefs(cfg, page, fields);
+  fields = dropPresetFields(page, normalizeApplookupRefs(cfg, page, fields));
   const path = `/apps/${page.app_id}/records`;
   if (cfg.preview) {
     // A preview submit creates a REAL record — deliberately: a form you
